@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aurora</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon" id="statusDot"></div>
+    <span class="logo-name">Aurora</span>
+  </div>
+  <div class="header-controls">
+    <button class="icon-btn" id="historyBtn" title="Meeting history">&#128337;</button>
+    <button class="icon-btn" id="summaryBtn" title="Meeting summary">&#9776;</button>
+  </div>
+</header>
+
+<div class="status-bar" id="statusBar">
+  <span id="statusText">Ready to listen</span>
+  <span class="phase-badge" id="phaseBadge">—</span>
+</div>
+
+<div class="waveform-wrap" id="waveformWrap">
+  <canvas class="waveform" id="waveformCanvas" width="360" height="48"></canvas>
+</div>
+
+<section class="section">
+  <div class="section-title">
+    <span>Live Transcript</span>
+    <button class="ghost-btn" id="clearTranscriptBtn">Clear</button>
+  </div>
+  <div class="transcript-box" id="transcriptBox">
+    <p class="placeholder">Transcript will appear here…</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-title">
+    <span>AI Responses</span>
+    <button class="ghost-btn" id="clearResponsesBtn">Clear</button>
+  </div>
+  <div class="responses-box" id="responsesBox">
+    <p class="placeholder">Relevant responses will appear here…</p>
+  </div>
+</section>
+
+<div class="context-strip" id="contextStrip" style="display:none">
+  <div class="ctx-item">
+    <span class="ctx-label">Topics</span>
+    <span class="ctx-val" id="topicsVal">—</span>
+  </div>
+  <div class="ctx-item">
+    <span class="ctx-label">Decisions</span>
+    <span class="ctx-val" id="decisionsVal">—</span>
+  </div>
+  <div class="ctx-item">
+    <span class="ctx-label">Actions</span>
+    <span class="ctx-val" id="actionsVal">—</span>
+  </div>
+</div>
+
+<footer class="footer">
+  <button class="primary-btn" id="startBtn">Start Listening</button>
+  <button class="danger-btn"  id="stopBtn"  disabled>Stop</button>
+</footer>
+
+<!-- Summary Modal -->
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Meeting Summary</span>
+      <button class="icon-btn" id="closeModalBtn">&#10005;</button>
+    </div>
+    <div class="modal-body" id="summaryBody">Loading…</div>
+  </div>
+</div>
+
+<!-- History Modal -->
+<div class="modal-overlay" id="historyOverlay" style="display:none">
+  <div class="modal modal--wide">
+    <div class="modal-header">
+      <span id="historyModalTitle">Meeting History</span>
+      <button class="icon-btn" id="closeHistoryBtn">&#10005;</button>
+    </div>
+
+    <!-- Session list view -->
+    <div id="historyListView">
+      <div class="history-user-bar" id="historyUserBar"></div>
+      <div class="modal-body history-list" id="historyList">
+        <p class="placeholder">No sessions saved yet.</p>
+      </div>
+    </div>
+
+    <!-- Session detail view -->
+    <div id="historyDetailView" style="display:none">
+      <div class="history-detail-nav">
+        <button class="ghost-btn" id="backToListBtn">&#8592; Back</button>
+        <span id="detailSessionDate" class="detail-date"></span>
+      </div>
+      <div class="modal-body history-detail-body" id="historyDetailBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

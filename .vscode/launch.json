@@ -1,0 +1,58 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+
+    {
+      "name": "🚀 FastAPI Backend",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "main:app",
+        "--reload",
+        "--port", "8000",
+        "--log-level", "info"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "python": "${workspaceFolder}/backend/venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+
+    {
+      "name": "🐍 Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "python": "${workspaceFolder}/backend/venv/bin/python",
+      "console": "integratedTerminal"
+    },
+
+    {
+      "name": "🔌 Chrome Extension Debugger",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}/extension",
+      "pathMapping": {
+        "/": "${workspaceFolder}/extension"
+      }
+    },
+
+    {
+      "name": "🎙 Full Stack (Backend + Extension)",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "python": "${workspaceFolder}/backend/venv/bin/python",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Open Chrome with debug port"
+    }
+  ]
+}

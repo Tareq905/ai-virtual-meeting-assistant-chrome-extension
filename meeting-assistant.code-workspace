@@ -1,0 +1,49 @@
+{
+  "folders": [
+    {
+      "name": "🎙 Meeting Assistant (root)",
+      "path": "."
+    },
+    {
+      "name": "⚙️  Backend (FastAPI)",
+      "path": "backend"
+    },
+    {
+      "name": "🔌 Extension (Chrome)",
+      "path": "extension"
+    }
+  ],
+
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:⚙️  Backend (FastAPI)}/venv/bin/python",
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/venv": true
+    }
+  },
+
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.black-formatter",
+      "ms-python.vscode-pylance",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "eamodio.gitlens",
+      "usernamehw.errorlens",
+      "mikestead.dotenv",
+      "gruntfuggly.todo-tree"
+    ]
+  },
+
+  "launch": {
+    "version": "0.2.0",
+    "compounds": [
+      {
+        "name": "🎙 Full Stack",
+        "configurations": ["🚀 FastAPI Backend", "🔌 Chrome Extension Debugger"]
+      }
+    ]
+  }
+}

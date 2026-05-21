@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+
+    {
+      "label": "📦 Install Python deps",
+      "type": "shell",
+      "command": "python -m venv venv && source venv/bin/activate && pip install -r requirements.txt",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+
+    {
+      "label": "📋 Copy .env.example → .env",
+      "type": "shell",
+      "command": "cp .env.example .env && echo '✅ .env created — add your API keys'",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    {
+      "label": "🚀 Start FastAPI server",
+      "type": "shell",
+      "command": "source venv/bin/activate && uvicorn main:app --reload --port 8000",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": { "kind": "build", "isDefault": true },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "ERROR",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started server process",
+          "endsPattern": "Application startup complete"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "backend" }
+    },
+
+    {
+      "label": "🏥 Health check",
+      "type": "shell",
+      "command": "curl -s http://localhost:8000/health | python -m json.tool",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    {
+      "label": "Open Chrome with debug port",
+      "type": "shell",
+      "command": "google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-ext-debug 'about:blank' &",
+      "windows": {
+        "command": "start chrome --remote-debugging-port=9222 --user-data-dir=%TEMP%\\chrome-ext-debug about:blank"
+      },
+      "osx": {
+        "command": "open -a 'Google Chrome' --args --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-ext-debug about:blank"
+      },
+      "group": "build",
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+
+    {
+      "label": "🧪 Test WebSocket connection",
+      "type": "shell",
+      "command": "python -c \"\nimport asyncio, websockets, json\nasync def t():\n    async with websockets.connect('ws://localhost:8000/ws') as ws:\n        msg = json.loads(await ws.recv())\n        print('✅ Connected:', msg)\n        await ws.send(json.dumps({'action': 'stop'}))\nasyncio.run(t())\n\"",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    {
+      "label": "🔍 Lint Python (flake8)",
+      "type": "shell",
+      "command": "source venv/bin/activate && flake8 . --max-line-length=100 --exclude=venv",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    {
+      "label": "⚡ Full setup from scratch",
+      "dependsOn": [
+        "📦 Install Python deps",
+        "📋 Copy .env.example → .env"
+      ],
+      "dependsOrder": "sequence",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}
