@@ -14,6 +14,7 @@ const decisionsVal       = document.getElementById("decisionsVal");
 const actionsVal         = document.getElementById("actionsVal");
 const startBtn           = document.getElementById("startBtn");
 const stopBtn            = document.getElementById("stopBtn");
+const downloadBtn        = document.getElementById("downloadBtn");        // footer export btn
 const summaryBtn         = document.getElementById("summaryBtn");
 const historyBtn         = document.getElementById("historyBtn");
 const clearTranscriptBtn = document.getElementById("clearTranscriptBtn");
@@ -49,6 +50,9 @@ let sessionStart = null;
 let sessionTranscript = [];
 let sessionResponses  = [];
 let sessionSummary    = null;
+
+// Holds the session currently open in the history detail view
+let _detailSession = null;
 
 // ── Waveform ──────────────────────────────────────────────────────────────────
 const ctx2d = waveformCanvas.getContext("2d");
@@ -97,7 +101,8 @@ async function getOrCreateUserId() {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function startSession() {
-  startBtn.disabled = true;
+  startBtn.disabled    = true;
+  if (downloadBtn) downloadBtn.disabled = true;
   setStatus("connecting", "Connecting…");
 
   sessionTranscript = [];
@@ -184,9 +189,6 @@ async function stopSession() {
   stopWaveform();
 
   if (ws && ws.readyState === WebSocket.OPEN) {
-    // Request a final summary and wait for the response BEFORE closing the WS.
-    // We resolve as soon as the "summary" message arrives, or after 1500ms
-    // as a safety timeout.
     ws.send(JSON.stringify({ action: "summary" }));
     await waitForSummary(1500);
     ws.send(JSON.stringify({ action: "stop" }));
@@ -195,6 +197,11 @@ async function stopSession() {
   ws = null;
 
   await persistSession();
+
+  // Enable the footer Export button if we have data to export
+  if (downloadBtn && sessionTranscript.length > 0) {
+    downloadBtn.disabled = false;
+  }
 
   if (workletNode) { workletNode.disconnect(); workletNode = null; }
   if (analyser)    { analyser.disconnect();    analyser    = null; }
@@ -208,7 +215,7 @@ function waitForSummary(timeoutMs) {
     if (sessionSummary) return resolve();
     const start = Date.now();
     const tick = () => {
-      if (sessionSummary)               return resolve();
+      if (sessionSummary)                return resolve();
       if (Date.now() - start > timeoutMs) return resolve();
       setTimeout(tick, 50);
     };
@@ -216,7 +223,7 @@ function waitForSummary(timeoutMs) {
   });
 }
 
-// ── Persist session ───────────────────────────────────────────────────────────
+// ── Persist session to chrome.storage ────────────────────────────────────────
 async function persistSession() {
   if (!sessionId || sessionTranscript.length === 0) return;
 
@@ -304,7 +311,6 @@ const RTYPE_LABELS = {
   clarifying_question: "❓ Ask back",
   recommendation:      "🛠 Recommend",
   flag:                "⚠ Heads-up",
-  // Legacy types kept for backward compat with old sessions in storage
   answer:              "💬 Say this",
   insight:             "💡 Insight",
   decision_ack:        "✅ Decision",
@@ -346,20 +352,17 @@ function updateContextStrip(data) {
 function requestSummary() {
   modalOverlay.style.display = "flex";
 
-  // Case 1: live session — request fresh summary from backend
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: "summary" }));
     summaryBody.textContent = "Loading…";
     return;
   }
 
-  // Case 2: session stopped — render cached summary
   if (sessionSummary) {
     renderSummary(sessionSummary);
     return;
   }
 
-  // Case 3: nothing to show
   summaryBody.textContent = "No summary available yet. Start a session and let the call run for a few utterances.";
 }
 
@@ -402,6 +405,7 @@ function showListView() {
   historyListView.style.display   = "block";
   historyDetailView.style.display = "none";
   historyModalTitle.textContent   = "Meeting History";
+  _detailSession = null;
 }
 
 function showDetailView() {
@@ -452,14 +456,22 @@ function buildSessionCard(session) {
     </div>
     <div class="history-card-topics" title="${escHtml(topics)}">${escHtml(topics)}</div>
     <div class="history-card-actions">
+      <button class="ghost-btn export-card-btn">⬇ Export</button>
       <button class="delete-btn" data-id="${escHtml(session.id)}">🗑 Delete</button>
     </div>
   `;
 
+  // Open detail view on card click (not on action buttons)
   card.addEventListener("click", (e) => {
-    if (e.target.closest(".delete-btn")) return;
+    if (e.target.closest(".delete-btn") || e.target.closest(".export-card-btn")) return;
     renderSessionDetail(session);
     showDetailView();
+  });
+
+  // Export from the list card directly
+  card.querySelector(".export-card-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    downloadSessionText(session);
   });
 
   card.querySelector(".delete-btn").addEventListener("click", async (e) => {
@@ -477,6 +489,8 @@ function buildSessionCard(session) {
 }
 
 function renderSessionDetail(session) {
+  _detailSession = session;
+
   const date    = new Date(session.date);
   const dateStr = date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
   const timeStr = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -522,26 +536,48 @@ function renderSessionDetail(session) {
     html += s.questions.map(q => `<div class="detail-list-item">${escHtml(q)}</div>`).join("");
   }
 
-  if (session.responses?.length) {
-    html += `<div class="detail-section-title">AI Responses</div>`;
-    for (const r of session.responses) {
-      const label = RTYPE_LABELS[r.response_type] || r.response_type;
-      html += `<div class="detail-response-card ${escHtml(r.response_type)}">
-        <div class="detail-badge">${label}</div>
-        <div>${escHtml(r.response)}</div>
-      </div>`;
+  // ── Interleaved conversation log ──────────────────────────────────────────
+  // Merge transcript + AI responses by timestamp so the .txt reads like a
+  // real conversation: CLIENT said X → AURORA suggested Y → CLIENT said Z…
+  const transcript = session.transcript || [];
+  const responses  = session.responses  || [];
+
+  if (transcript.length || responses.length) {
+    html += `<div class="detail-section-title">Conversation Log</div>`;
+
+    const events = [
+      ...transcript.map(u => ({ kind: "client", ts: u.ts || 0, text: u.text })),
+      ...responses .map(r => ({ kind: "ai",     ts: r.ts || 0, text: r.response, rtype: r.response_type })),
+    ].sort((a, b) => a.ts - b.ts);
+
+    for (const ev of events) {
+      if (ev.kind === "client") {
+        html += `<div class="detail-transcript-item">
+          <span class="conv-role client-role">CLIENT</span>
+          ${escHtml(ev.text)}
+        </div>`;
+      } else {
+        const label = RTYPE_LABELS[ev.rtype] || ev.rtype || "AI";
+        html += `<div class="detail-response-card ${escHtml(ev.rtype || '')}">
+          <div class="detail-badge">${label}</div>
+          <div>${escHtml(ev.text)}</div>
+        </div>`;
+      }
     }
   }
 
-  if (session.transcript?.length) {
-    html += `<div class="detail-section-title">Full Transcript</div>`;
-    for (const u of session.transcript) {
-      html += `<div class="detail-transcript-item">${escHtml(u.text)}</div>`;
-    }
-  }
+  // Download button at bottom of detail body
+  html += `<div style="margin-top:12px;text-align:center">
+    <button class="ghost-btn" id="detailExportBtn">⬇ Download as .txt</button>
+  </div>`;
 
   historyDetailBody.innerHTML = html;
   historyDetailBody.scrollTop = 0;
+
+  // Wire the download button AFTER it's in the DOM
+  document.getElementById("detailExportBtn").addEventListener("click", () => {
+    downloadSessionText(session);
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -558,9 +594,131 @@ function formatDuration(sec) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+// ── Text export ───────────────────────────────────────────────────────────────
+function buildSessionText(session) {
+  const date    = new Date(session.date);
+  const dateStr = date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  const timeStr = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const dur     = formatDuration(session.duration || 0);
+  const s       = session.summary || {};
+  const DIV     = "─".repeat(60);
+
+  const lines = [];
+  lines.push("AURORA — MEETING SESSION EXPORT");
+  lines.push(DIV);
+  lines.push(`Date      : ${dateStr} at ${timeStr}`);
+  lines.push(`Duration  : ${dur}`);
+  lines.push(`Phase     : ${(s.phase || "—").replace("_", " ")}`);
+  lines.push(`Utterances: ${s.utterances || session.transcript?.length || 0}`);
+  lines.push(`Session ID: ${session.id}`);
+  lines.push("");
+
+  if (s.topics?.length) {
+    lines.push("TOPICS");
+    lines.push(DIV);
+    s.topics.forEach(t => lines.push(`  • ${t}`));
+    lines.push("");
+  }
+
+  if (s.decisions?.length) {
+    lines.push("DECISIONS");
+    lines.push(DIV);
+    s.decisions.forEach(d => lines.push(`  • ${d}`));
+    lines.push("");
+  }
+
+  if (s.action_items?.length) {
+    lines.push("ACTION ITEMS");
+    lines.push(DIV);
+    s.action_items.forEach(a => lines.push(`  • ${a}`));
+    lines.push("");
+  }
+
+  if (s.questions?.length) {
+    lines.push("OPEN QUESTIONS");
+    lines.push(DIV);
+    s.questions.forEach(q => lines.push(`  • ${q}`));
+    lines.push("");
+  }
+
+  // Interleaved conversation log
+  const transcript = session.transcript || [];
+  const responses  = session.responses  || [];
+
+  lines.push("CONVERSATION LOG");
+  lines.push(DIV);
+
+  const events = [
+    ...transcript.map(u => ({ kind: "client", ts: u.ts || 0, text: u.text })),
+    ...responses .map(r => ({ kind: "ai",     ts: r.ts || 0, text: r.response, rtype: r.response_type })),
+  ].sort((a, b) => a.ts - b.ts);
+
+  if (events.length === 0) {
+    lines.push("  (no conversation recorded)");
+  } else {
+    for (const ev of events) {
+      const time = ev.ts
+        ? new Date(ev.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " "
+        : "";
+      if (ev.kind === "client") {
+        lines.push(`[${time}CLIENT]`);
+        lines.push(`  ${ev.text}`);
+      } else {
+        const label = (RTYPE_LABELS[ev.rtype] || ev.rtype || "AI").replace(/[^\w\s]/g, "").trim();
+        lines.push(`[${time}AURORA — ${label}]`);
+        lines.push(`  ${ev.text}`);
+      }
+      lines.push("");
+    }
+  }
+
+  lines.push(DIV);
+  lines.push("END OF SESSION");
+  return lines.join("\n");
+}
+
+function downloadSessionText(session) {
+  const text    = buildSessionText(session);
+  const date    = new Date(session.date);
+  const dateTag = date.toISOString().slice(0, 10);
+  const timeTag = date.toTimeString().slice(0, 8).replace(/:/g, "-");
+  const filename = `aurora-session-${dateTag}-${timeTag}.txt`;
+
+  // chrome.downloads.create() requires a URL — convert the text to a
+  // data: URI so no blob lifetime issues arise across the popup lifecycle.
+  const dataUrl = "data:text/plain;charset=utf-8," + encodeURIComponent(text);
+
+  chrome.downloads.download(
+    { url: dataUrl, filename, saveAs: false },
+    (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.error("[Aurora] Download failed:", chrome.runtime.lastError.message);
+      } else {
+        console.log("[Aurora] Download started, id:", downloadId);
+      }
+    }
+  );
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 startBtn.addEventListener("click", startSession);
 stopBtn.addEventListener("click",  stopSession);
+
+// Footer Export button — downloads the most recently completed session
+if (downloadBtn) {
+  downloadBtn.addEventListener("click", () => {
+    if (!sessionId || sessionTranscript.length === 0) return;
+    downloadSessionText({
+      id:         sessionId,
+      userId,
+      date:       new Date(sessionStart).toISOString(),
+      duration:   Math.round((Date.now() - sessionStart) / 1000),
+      transcript: sessionTranscript,
+      responses:  sessionResponses,
+      summary:    sessionSummary || {},
+    });
+  });
+}
 
 summaryBtn.addEventListener("click",    requestSummary);
 closeModalBtn.addEventListener("click", () => { modalOverlay.style.display = "none"; });
@@ -572,9 +730,9 @@ historyOverlay.addEventListener("click",  (e) => { if (e.target === historyOverl
 backToListBtn.addEventListener("click",   showListView);
 
 clearTranscriptBtn.addEventListener("click", () => {
-  transcriptBox.innerHTML = '<p class="placeholder">Client transcript will appear here…</p>';
+  transcriptBox.innerHTML = '<p class="placeholder">Transcript will appear here…</p>';
   interimEl = null;
 });
 clearResponsesBtn.addEventListener("click", () => {
-  responsesBox.innerHTML = '<p class="placeholder">Suggested replies will appear here…</p>';
+  responsesBox.innerHTML = '<p class="placeholder">Relevant responses will appear here…</p>';
 });
